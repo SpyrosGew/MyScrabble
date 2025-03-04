@@ -1,11 +1,11 @@
 import random
+import threading
+import select
+import time
 import twl
+import sys
 # DICTIONARIES - - - - - - -
-# - SCORE DICTIONARY - - - -
-players_score = {
-  "0": 0,
-  "1": 0
-}
+
 # - VALUE DICTIONARY - - - -
 letter_value = {
   "A": 1,
@@ -86,7 +86,7 @@ class Player:
 
   def get_letter_changes(self):
     return self.letter_changes
-  
+
   def get_name(self):  
     return self.name
 
@@ -145,11 +145,12 @@ class Bag:
 class Game:
 
   # - - CONSTRUCTOR - - - - - - - - - - -
-  def __init__(self, players_score):
+  def __init__(self):
     self.active_rounds = 0
     self.active_player = 0
     self.players = []
-    self.scores = players_score
+    self.scores = players_score = {"0": 0,
+                                   "1": 0}
     self.bag = Bag(letter_bag)
 
   # - - GETTERS - - - - - - - - - - - - -
@@ -184,15 +185,15 @@ class Game:
         error += 1
       else:
         letters.remove(letter) 
-    
+
     if error >2:
       print("You don't have the letters: " + str(wrong_letters))
       return False
-    
+
     if error == 0:
       player.set_active_letters(letters)
       return True
-      
+
     if error == 1:
       if '*' in letters:
         letters.remove('*')
@@ -209,7 +210,7 @@ class Game:
         else:
           print("You don't have the letters: " + str(wrong_letters))
           return False  
-  
+
   def change_letter(self, player, bag):
     print("You have " + str(player.get_letter_changes()) + " changes left")
     print("Your letters are: " + str(player.get_active_letters()))
@@ -222,50 +223,82 @@ class Game:
         print(f"Letter {letter} changed to {new_letter}")
     else:
         print("You don't have that letter.")
-
-      
-    
 # - - - - - - END OF CLASS GAME - - - - - - - - - - - -
 
+turn_timed_out = threading.Event()  # Event to track if time has expired
+
+def turn_timeout():
+  print("\n⏳ Time's up! Next player's turn.")
+  turn_timed_out.set()  # Signal that the timer expired
+
+def get_user_input():
+  global word
+  word = input("Enter a word: ").strip().lower()
+  turn_timed_out.set()  # If the player enters a word, stop the timer
 
 # * - * - * MAIN FUNCTIONALITY * - * - * - * - * - * - *
 
-# All class definitions remain the same
+# INITIALIZING:
+if __name__ == "__name__":
+  game = Game()
+  # PLAYER 1:  
+  player1 = Player(input("~PLAYER 1~\nEnter your name: "), 0)
+  player1.update_active_letters(game.get_bag())
+  game.add_player(player1)
+  # PLAYER 2:
+  player2 = Player(input("~PLAYER 2~\nEnter your name: "), 1)
+  player2.update_active_letters(game.get_bag())
+  game.add_player(player2)
 
-if __name__ == "__main__":
-    # INITIALIZING:
-    game = Game(players_score)
-    
-    # PLAYER 1:  
-    player1 = Player(input("~PLAYER 1~\nEnter your name: "), 0)
-    player1.update_active_letters(game.get_bag())
-    game.add_player(player1)
-    
-    # PLAYER 2:
-    player2 = Player(input("~PLAYER 2~\nEnter your name: "), 1)
-    player2.update_active_letters(game.get_bag())
-    game.add_player(player2)
+  # GAME LOOP:import threading
+  while not game.get_bag().is_empty():
+    turn_timed_out.clear()  # Reset timeout flag at the start of each turn
 
-    # GAME LOOP:
-    while not game.get_bag().is_empty():
-        active_player = game.get_active_player()
-        print(active_player.get_name())
-        print("Enter a word using the letters or enter 1 to change a letter", active_player.get_active_letters())
+    print("You have 2 minutes to write a word.")
+    timer = threading.Timer(120, turn_timeout)  # Change to 10 seconds for testing
+    timer.start()
+
+    active_player = game.get_active_player()
+    print(f"{active_player.get_name()}, it's your turn!")
+    print("Enter a word using the letters or enter 1 to change a letter:")
+    print("Your letters:", active_player.get_active_letters())
+
+    word = None
+    start_time = time.time()
+
+    # Non-blocking input loop
+    while time.time() - start_time < 120:  # Give 10 seconds for input
+        if turn_timed_out.is_set():
+            break  # Exit input loop if time runs out
+
+        if sys.stdin in select.select([sys.stdin], [], [], 1)[0]:
+            word = input().strip().lower()
+            break
+
+    timer.cancel()  # Stop the timer
+
+    if turn_timed_out.is_set():
+        print("⏳ Time ran out! Skipping turn.")
+        game.update_active_player()
+        continue  # Skip to the next loop iteration
+
+    if not word:
+        continue  # If no word was entered, restart the turn
+
+    if word == "1":
+        game.change_letter(active_player, game.get_bag())
+        active_player.set_letter_changes(active_player.get_letter_changes() - 1)
+        print("Enter a word using the letters:", active_player.get_active_letters())
         word = input().lower()
-        
-        if word == "1":
-            game.change_letter(active_player, game.get_bag())
-            active_player.set_letter_changes(active_player.get_letter_changes() - 1)
-            print("Enter a word using the letters", active_player.get_active_letters())
-            word = input().lower()
 
-        if twl.check(word) and game.check_letters(word, active_player):
-            print("Valid word")
-            for letter in word:
-                game.scores[str(active_player.get_value())] += letter_value[letter.upper()]
-            print(active_player.get_name(), "has", game.scores[str(active_player.get_value())], "points")
-            game.update_active_player()
-            active_player.update_active_letters(game.get_bag())
-        else:
-            print("Invalid word, try again")
+    if twl.check(word) and game.check_letters(word, active_player):
+        print("✅ Valid word!")
+        for letter in word:
+            game.scores[str(active_player.get_value())] += letter_value[letter.upper()]
+        print(active_player.get_name(), "has", game.scores[str(active_player.get_value())], "points")
 
+        active_player.update_active_letters(game.get_bag())  # Update letters
+    else:
+        print("❌ Invalid word, try again!")
+
+    game.update_active_player()  # Move to next player
