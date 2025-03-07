@@ -21,10 +21,11 @@ class TestGame(unittest.TestCase):
 
     def test_valid_word(self):
         g = scrabble.Game()
-        player = MockPlayer(['H', 'E', 'L', 'L', 'O'])
-        result = g.check_letters("HELLO", player)  # Use scrabble.check_letters
+        p = scrabble.Player('geo', 0)
+        p.set_active_letters(['H', 'E', 'L', 'L', 'O'])
+        result = g.check_letters("HELLO", p)  # Use scrabble.check_letters
         self.assertTrue(result)
-        self.assertEqual(player.get_active_letters(), [])  # All letters used up
+        self.assertEqual(p.get_active_letters(), [])  # All letters used up
 
     def test_one_missing_letter_with_wildcard(self):
         g = scrabble.Game()
